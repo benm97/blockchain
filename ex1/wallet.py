@@ -1,13 +1,19 @@
-from .utils import *
-from .transaction import Transaction
+from typing import Optional, List
+
+from . import Block
 from .bank import Bank
-from typing import Optional
+from .transaction import Transaction
+from .utils import *
 
 
 class Wallet:
     def __init__(self) -> None:
         """This function generates a new wallet with a new private key."""
-        raise NotImplementedError()
+        keys: Tuple[PrivateKey, PublicKey] = gen_keys()
+        self.__private_key: PrivateKey = keys[0]
+        self.__public_key: PublicKey = keys[1]
+        self.__unspent_transactions: List[Transaction] = []
+        self.__last_updated_block_hash: BlockHash = GENESIS_BLOCK_PREV
 
     def update(self, bank: Bank) -> None:
         """
@@ -15,7 +21,10 @@ class Wallet:
         Don't read all of the bank's utxo, but rather process the blocks since the last update one at a time.
         For this exercise, there is no need to validate all transactions in the block.
         """
-        raise NotImplementedError()
+
+        new_blocks: List[Block] = self.__get_new_blocks(bank)
+        for block in new_blocks:
+            self.__update_unspent_transactions_with_block(block)
 
     def create_transaction(self, target: PublicKey) -> Optional[Transaction]:
         """
@@ -40,10 +49,29 @@ class Wallet:
         Coins that the wallet owned and sent away will still be considered as part of the balance until the spending
         transaction is in the blockchain.
         """
-        raise NotImplementedError()
+        return len(self.__unspent_transactions)
 
     def get_address(self) -> PublicKey:
         """
         This function returns the public address of this wallet (see the utils module for generating keys).
         """
-        raise NotImplementedError()
+        return self.__public_key
+
+    def __get_new_blocks(self, bank: Bank) -> List[Block]:
+        new_blocks: List[Block] = []
+        current_block_hash: BlockHash = bank.get_latest_hash()
+        while current_block_hash != self.__last_updated_block_hash:
+            current_block: Block = bank.get_block(current_block_hash)
+            new_blocks.append(current_block)
+            current_block_hash = current_block.get_prev_block_hash()
+        self.__last_updated_block_hash = bank.get_latest_hash()
+        return new_blocks
+
+    def __update_unspent_transactions_with_block(self, block: Block)-> None:
+        inbound_transactions: List[Transaction] = [transaction for transaction in block.get_transactions() if
+                                                   transaction.output == self.get_address()]
+        self.__unspent_transactions.extend(inbound_transactions)
+
+        new_transactions_input: List[Optional[TxID]] = [transaction.input for transaction in block.get_transactions()]
+        self.__unspent_transactions = [unspent_transaction for unspent_transaction in self.__unspent_transactions if
+                                       unspent_transaction.get_txid() not in new_transactions_input]
