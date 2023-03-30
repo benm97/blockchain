@@ -1,6 +1,7 @@
+import json
 from typing import Optional, List
 
-from . import Block
+from .block import Block
 from .bank import Bank
 from .transaction import Transaction
 from .utils import *
@@ -14,6 +15,7 @@ class Wallet:
         self.__public_key: PublicKey = keys[1]
         self.__unspent_transactions: List[Transaction] = []
         self.__last_updated_block_hash: BlockHash = GENESIS_BLOCK_PREV
+        self.__frozen_transactions: List[Transaction] = []
 
     def update(self, bank: Bank) -> None:
         """
@@ -34,13 +36,20 @@ class Wallet:
         bank just yet (it still wasn't included in a block) then the wallet  should'nt spend it again
         until unfreeze_all() is called. The method returns None if there are no unspent outputs that can be used.
         """
-        raise NotImplementedError()
+        available_coin: Optional[Transaction] = next(
+            (transaction for transaction in self.__unspent_transactions if
+             transaction not in self.__frozen_transactions), None)
+        if available_coin is None:
+            return None
+        signature: Signature = sign(json.dumps(self.__build_message(available_coin, target), sort_keys=True).encode(), self.__private_key)
+        self.__frozen_transactions.append(available_coin)
+        return Transaction(target, available_coin.get_txid(), signature)
 
     def unfreeze_all(self) -> None:
         """
         Allows the wallet to try to re-spend outputs that it created transactions for (unless these outputs made it into the blockchain).
         """
-        raise NotImplementedError()
+        self.__frozen_transactions.clear()
 
     def get_balance(self) -> int:
         """
@@ -67,7 +76,7 @@ class Wallet:
         self.__last_updated_block_hash = bank.get_latest_hash()
         return new_blocks
 
-    def __update_unspent_transactions_with_block(self, block: Block)-> None:
+    def __update_unspent_transactions_with_block(self, block: Block) -> None:
         inbound_transactions: List[Transaction] = [transaction for transaction in block.get_transactions() if
                                                    transaction.output == self.get_address()]
         self.__unspent_transactions.extend(inbound_transactions)
@@ -75,3 +84,8 @@ class Wallet:
         new_transactions_input: List[Optional[TxID]] = [transaction.input for transaction in block.get_transactions()]
         self.__unspent_transactions = [unspent_transaction for unspent_transaction in self.__unspent_transactions if
                                        unspent_transaction.get_txid() not in new_transactions_input]
+
+    @staticmethod
+    def __build_message(input, output):
+        return {"input": str(input.get_txid()),
+                "output": str(output)}

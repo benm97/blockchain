@@ -1,9 +1,10 @@
+import json
 import secrets
 from typing import List, cast, Optional
 
 from .block import Block
 from .transaction import Transaction
-from .utils import BlockHash, PublicKey, Signature, GENESIS_BLOCK_PREV, TxID
+from .utils import BlockHash, PublicKey, Signature, GENESIS_BLOCK_PREV, TxID, verify
 
 
 class Bank:
@@ -22,11 +23,10 @@ class Bank:
         (iii) there is contradicting tx in the mempool.
         (iv) there is no input (i.e., this is an attempt to create money from nothing)
         """
-        if transaction.input is None:
-            return False
-
-        self.__mempool.append(transaction)  # TODO check validity
-        return True
+        if self.__is_transaction_valid(transaction):
+            self.__mempool.append(transaction)
+            return True
+        return False
 
     def end_day(self, limit: int = 10) -> BlockHash:
         """
@@ -36,7 +36,7 @@ class Bank:
         If there are no transactions, an empty block is created. The hash of the block is returned.
         """
         last_index = limit if len(self.__mempool) > limit else len(self.__mempool)
-        new_block:Block = Block(self.__mempool[:last_index], self.get_latest_hash())
+        new_block: Block = Block(self.__mempool[:last_index], self.get_latest_hash())
         self.__blockchain.append(new_block)
         self.__mempool = self.__mempool[last_index:]
         self.__update_utxo_with_last_block()
@@ -79,9 +79,27 @@ class Bank:
         """
         self.__mempool.append(Transaction(target, None, cast(Signature, secrets.token_bytes(48))))
 
-    def __update_utxo_with_last_block(self)-> None:
+    def __update_utxo_with_last_block(self) -> None:
         new_transactions: List[Transaction] = self.__blockchain[-1].get_transactions()
         self.__utxo.extend(new_transactions)
         new_transactions_input: List[Optional[TxID]] = [transaction.input for transaction in new_transactions]
         self.__utxo = [unspent_transaction for unspent_transaction in self.__utxo if
                        unspent_transaction.get_txid() not in new_transactions_input]
+
+    @staticmethod
+    def __build_message(transaction: Transaction) -> bytes:
+        return json.dumps({"input": str(transaction.input), "output": str(transaction.output)}, sort_keys=True).encode()
+
+    def __is_transaction_valid(self, transaction: Transaction) -> bool:
+        if transaction.input is None:
+            return False
+        if transaction.input in [transaction.input for transaction in self.__mempool]:
+            return False
+        input_transaction: Optional[Transaction] = next(
+            (unspent_transaction for unspent_transaction in self.get_utxo() if
+             unspent_transaction.get_txid() == transaction.input), None)
+        if input_transaction is None:
+            return False
+        if not verify(self.__build_message(transaction), transaction.signature, input_transaction.output):
+            return False
+        return True

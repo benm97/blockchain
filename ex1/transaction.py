@@ -19,5 +19,8 @@ class Transaction:
 
     def get_txid(self) -> TxID:
         """Returns the identifier of this transaction. This is the SHA256 of the transaction contents."""
-        transaction_json = json.dumps(self, sort_keys=True).encode()
-        return cast(TxID, hashlib.sha256(transaction_json).digest())
+        return cast(TxID, hashlib.sha256(self.__toJson()).digest())
+
+    def __toJson(self) -> bytes:
+        return json.dumps(self, default=lambda o: str(o) if type(o) == bytes else o.__dict__,
+                          sort_keys=True).encode()
