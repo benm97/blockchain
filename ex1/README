@@ -1,0 +1,12 @@
+Name:   Benjamin Maman
+ID:     341145811
+User:   Benm
+
+Exercise 1
+
+A partial prototype of blockchain implementation, relying on a trusted Bank and used by Wallets.
+-The bank maintains a list of past accepted blocks, a list of transaction waiting to be accepted (mempool)
+and a list of unspent txs (utxo). At "end day", the bank accept a new block and compute the updated utxo
+-Each wallet have a private and public key. The wallet maintain a list of unspent transaction involving it as input
+i.e. a list of coin to spend.
+Coin are marked as "frozen" after use and need to wait to be accepted or unfreeze to be used again.
